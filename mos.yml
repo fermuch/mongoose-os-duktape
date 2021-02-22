@@ -20,10 +20,6 @@ tags:
 
 manifest_version: 2017-09-29
 
-cdefs:
-  # save up to 20kb of ram
-  DUK_USE_LIGHTFUNC_BUILTINS: y
-
 # Temporary, while root manifest change propagates (2018/03/29).
 libs:
   - origin: https://github.com/mongoose-os-libs/core
