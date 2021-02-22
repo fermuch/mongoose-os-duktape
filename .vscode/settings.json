@@ -1,0 +1,6 @@
+{
+  "files.associations": {
+    "mgos_system.h": "c",
+    "mos_duk.h": "c"
+  }
+}
