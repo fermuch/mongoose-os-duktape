@@ -3,6 +3,8 @@
 #include "common/cs_dbg.h"
 
 #include "mgos_timers.h"
+#include "mgos_time.h"
+
 #include "mos_duk_utils.h"
 
 
@@ -136,6 +138,12 @@ static duk_ret_t mos_duk_func__set_interval(duk_context* ctx) {
   return 0;
 }
 
+static duk_ret_t mos_duk_func__mos_timers_uptime(duk_context* ctx) {
+  double uptime = mgos_uptime();
+  duk_push_number(ctx, uptime);
+  return 1;
+}
+
 void mos_duk_define_functions(duk_context* ctx) {
   duk_int_t rc;
 
@@ -156,4 +164,16 @@ void mos_duk_define_functions(duk_context* ctx) {
   // setTimer(time_ms, cb)
   duk_push_c_function(ctx, mos_duk_func__set_interval, 2);
   duk_put_global_string(ctx, "setInterval");
+
+  // MOS
+  duk_push_global_object(ctx);
+    // MOS.Timers
+    duk_push_global_object(ctx);
+      // MOS.Timers.uptime()
+      duk_push_c_function(ctx, mos_duk_func__mos_timers_uptime, 1);
+      duk_put_global_string(ctx, "uptime");
+    // close MOS.Timers
+    duk_put_global_string(ctx, "Timers");
+  // close MOS
+  duk_put_global_string(ctx, "MOS");
 }
