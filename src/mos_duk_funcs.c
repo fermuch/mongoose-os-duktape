@@ -7,6 +7,26 @@
 
 #include "mos_duk_utils.h"
 
+// taken from https://github.com/nkolban/duktape-esp32/blob/28b4fb194665039ec7a907d346e9c2cd44e387df/main/include/duktape_utils.h
+#define ADD_FUNCTION(FUNCTION_NAME_STRING, FUNCTION_NAME, PARAM_COUNT) \
+		duk_push_c_function(ctx, FUNCTION_NAME, PARAM_COUNT); \
+		duk_put_prop_string(ctx, -2, FUNCTION_NAME_STRING)
+
+#define ADD_GLOBAL_FUNCTION(FUNCTION_NAME_STRING, FUNCTION_NAME, PARAM_COUNT) \
+		duk_push_c_function(ctx, FUNCTION_NAME, PARAM_COUNT); \
+		duk_put_global_string(ctx, FUNCTION_NAME_STRING)
+
+#define ADD_INT(INT_NAME, INT_VALUE) \
+		duk_push_int(ctx, INT_VALUE); \
+		duk_put_prop_string(ctx, -2, INT_NAME)
+
+#define ADD_STRING(STRING_NAME, STRING_VALUE) \
+		duk_push_string(ctx, STRING_VALUE); \
+		duk_put_prop_string(ctx, -2, STRING_NAME)
+
+#define ADD_BOOLEAN(BOOLEAN_NAME, BOOLEAN_VALUE) \
+		duk_push_boolean(ctx, BOOLEAN_VALUE); \
+		duk_put_prop_string(ctx, -2, BOOLEAN_NAME)
 
 static void gen_random_id(char *s, size_t len) {
   for (size_t i = 0; i < len; ++i) {
@@ -145,7 +165,7 @@ static duk_ret_t mos_duk_func__mos_timers_uptime(duk_context* ctx) {
 }
 
 void mos_duk_define_functions(duk_context* ctx) {
-  duk_int_t rc;
+  // duk_int_t rc;
 
   // print(...)
   duk_push_c_function(ctx, &mos_duk_func_native_print, DUK_VARARGS);
@@ -161,19 +181,38 @@ void mos_duk_define_functions(duk_context* ctx) {
   mos_duk_reg_vararg_func(ctx, mos_duk_func_log, "warn", LOG_WARN);
   duk_put_global_string(ctx, "console");
 
-  // setTimer(time_ms, cb)
-  duk_push_c_function(ctx, mos_duk_func__set_interval, 2);
-  duk_put_global_string(ctx, "setInterval");
+  // global utils
+  ADD_GLOBAL_FUNCTION("setInterval", mos_duk_func__set_interval, 2);
+  // TODO: setTimeout
 
-  // MOS
-  duk_push_global_object(ctx);
-    // MOS.Timers
-    duk_push_global_object(ctx);
-      // MOS.Timers.uptime()
-      duk_push_c_function(ctx, mos_duk_func__mos_timers_uptime, 1);
-      duk_put_global_string(ctx, "uptime");
-    // close MOS.Timers
-    duk_put_global_string(ctx, "Timers");
-  // close MOS
+  duk_push_object(ctx);
+  // MOS ADC
+  // MOS App
+  // MOS BitBang
+  // MOS Config
+  // MOS Debug
+  // MOS Event
+  // MOS I2C
+  // MOS JSON
+  // MOS Logging
+  // MOS Membuf
+  // MOS Net Events
+  // MOS Onewire
+  // MOS PWM
+  // MOS SPI
+  // MOS String
+  // MOS System
+  // MOS Time
+  duk_push_object(ctx); // MOS.Time
+  ADD_FUNCTION("uptime", mos_duk_func__mos_timers_uptime, 1);
+  duk_put_prop_string(ctx, -2, "Time");
+  // MOS Timers
+  duk_push_object(ctx); // MOS.Timers
+  ADD_FUNCTION("uptime", mos_duk_func__mos_timers_uptime, 1);
+  duk_put_prop_string(ctx, -2, "Timers");
+  // MOS UART
+  // MOS Utils
+
+  // MOS global object
   duk_put_global_string(ctx, "MOS");
 }
