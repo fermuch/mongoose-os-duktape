@@ -4,6 +4,7 @@
 
 #include "mgos_timers.h"
 #include "mgos_time.h"
+#include "mgos_adc.h"
 
 #include "mos_duk_utils.h"
 
@@ -164,6 +165,24 @@ static duk_ret_t mos_duk_func__mos_timers_uptime(duk_context* ctx) {
   return 1;
 }
 
+// MGOS.ADC.enable()
+static duk_ret_t mos_duk_func__adc_enable(duk_context* ctx) {
+  int pin;
+  pin = duk_require_uint(ctx, 0);
+  bool enabled = mgos_adc_enable(pin);
+  duk_push_boolean(ctx, enabled);
+  return 1;
+}
+
+// MGOS.ADC.read()
+static duk_ret_t mos_duk_func__adc_read(duk_context* ctx) {
+  int pin;
+  pin = duk_require_int(ctx, 0);
+  int value = mgos_adc_read(pin);
+  duk_push_uint(ctx, value);
+  return 1;
+}
+
 void mos_duk_define_functions(duk_context* ctx) {
   // duk_int_t rc;
 
@@ -185,8 +204,13 @@ void mos_duk_define_functions(duk_context* ctx) {
   ADD_GLOBAL_FUNCTION("setInterval", mos_duk_func__set_interval, 2);
   // TODO: setTimeout
 
+  // MOS
   duk_push_object(ctx);
   // MOS ADC
+  duk_push_object(ctx); // MOS.ADC
+  ADD_FUNCTION("enable", mos_duk_func__adc_enable, 1);
+  ADD_FUNCTION("read", mos_duk_func__adc_read, 1);
+  duk_put_prop_string(ctx, -2, "ADC");
   // MOS App
   // MOS BitBang
   // MOS Config
