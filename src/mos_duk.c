@@ -23,7 +23,7 @@ static void mos_duk_fatal_error_handler(void *udata, const char *msg) {
 }
 
 static bool mos_duk_file_exists(const char *fname) {
-  LOG(LL_DEBUG, (
+  LOG(LL_VERBOSE_DEBUG, (
     "mos_duk_file_exists: fname:'%s'",
       fname
   ));
@@ -112,10 +112,8 @@ static duk_ret_t mos_duk_load_module_handler(duk_context *ctx) {
     return DUK_RET_ERROR;
   }
 
-  LOG(LL_DEBUG, ("File: %s", source_code));
-  const char* dukstr = duk_push_string(ctx, source_code);
+  duk_push_string(ctx, source_code);
   free(source_code);
-  LOG(LL_DEBUG, ("Duktape STR: %s", dukstr));
   return 1;
 }
 
@@ -150,22 +148,32 @@ static duk_ret_t native_print(duk_context *ctx) {
 }
 
 static void mos_duk_init_done_handler(int ev, void *ev_data, void *userdata) {
+  LOG(LL_DEBUG, ("Loading main file"));
+  const char * main_file =
+                     mos_duk_file_exists("index.js")
+    ? "index.js"   : mos_duk_file_exists("app.js")
+    ? "app.js"     : mos_duk_file_exists("main.js")
+    ? "main.js"    : mos_duk_file_exists("init.js")
+    ? "init.js"    : NULL;
+  if (main_file == NULL) {
+    LOG(LL_ERROR, ("No file to load! Please write a main.js file and add it to your filesystem"));
+    return;
+  }
+  
+  LOG(LL_DEBUG, ("Using \"%s\" as main file", main_file));
+  size_t size;
+  char *source_code = mos_duk_read_file(main_file, &size);
+  if (source_code == NULL) {
+    LOG(LL_ERROR, ("cannot load file: %s", main_file));
+    // TODO: die here? send an event?
+    return;
+  }
+
   LOG(LL_DEBUG, ("Calling main function"));
-  duk_push_string(ctx,
-    "if (typeof Duktape !== 'object') {\n"
-    "    print('not Duktape');\n"
-    "} else if (Duktape.version >= 20403) {\n"
-    "    print('Duktape 2.4.3 or higher');\n"
-    "} else if (Duktape.version >= 10500) {\n"
-    "    print('Duktape 1.5.0 or higher (but lower than 2.4.3)');\n"
-    "} else {\n"
-    "    print('Duktape lower than 1.5.0');\n"
-    "}\n\n\n"
-    "try { require('foo'); } catch (e) { print('problem catched!'); print('Error was: ', e); }"
-  );
-  duk_ret_t rc = duk_module_node_peval_main(ctx, "index.js");
+  duk_push_string(ctx, source_code);
+  free(source_code); // free before eval to have more resources
+  duk_ret_t rc = duk_module_node_peval_main(ctx, main_file);
   if (rc != 0) {
-    LOG(LL_DEBUG, ("about to call mos_duk_log_error"));
     mos_duk_log_error(ctx);
   }
 }
