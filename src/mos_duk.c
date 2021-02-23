@@ -8,6 +8,7 @@
 #include "mgos_event.h"
 #include "mgos_system.h"
 
+#include "mos_duk_funcs.h"
 
 static duk_context* ctx = NULL;
 
@@ -138,15 +139,6 @@ static void mos_duk_log_error(duk_context *ctx) {
 	duk_pop_n(ctx, 4);
 }
 
-static duk_ret_t native_print(duk_context *ctx) {
-	duk_push_string(ctx, " ");
-	duk_insert(ctx, 0);
-	duk_join(ctx, duk_get_top(ctx) - 1);
-  LOG(LL_DEBUG, ("[JS]> %s", duk_safe_to_string(ctx, -1)));
-  duk_pop(ctx);
-	return 0;
-}
-
 static void mos_duk_init_done_handler(int ev, void *ev_data, void *userdata) {
   LOG(LL_DEBUG, ("Loading main file"));
   const char * main_file =
@@ -193,10 +185,10 @@ bool mgos_duk_init(void) {
   duk_put_prop_string(ctx, -2, "load");
   duk_module_node_init(ctx);
 
-  LOG(LL_DEBUG, ("Creating print function"));
-  duk_push_c_function(ctx, &native_print, DUK_VARARGS);
-  duk_put_global_string(ctx, "print");
+  LOG(LL_VERBOSE_DEBUG, ("Creating utility functions"));
+  mos_duk_define_functions(ctx);
 
+  // call init after mgos starts
   mgos_event_add_handler(MGOS_EVENT_INIT_DONE, mos_duk_init_done_handler, NULL);
 
   mem2 = mgos_get_free_heap_size();

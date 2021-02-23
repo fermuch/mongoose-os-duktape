@@ -1,9 +1,9 @@
 /*
- * mJS wrapper API.
+ * Duktape wrapper API.
  */
 
-#ifndef MOS_MJS_H_
-#define MOS_MJS_H_
+#ifndef MOS_DUK_H_
+#define MOS_DUK_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -11,7 +11,7 @@ extern "C" {
 
 #include "duktape.h"
 
-/* Return global mJS instance. */
+/* Return global duktape instance. */
 duk_context* mgos_duk_get_global(void);
 
 #ifdef __cplusplus
