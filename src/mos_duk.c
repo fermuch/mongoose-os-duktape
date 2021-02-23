@@ -22,6 +22,41 @@ static void mos_duk_fatal_error_handler(void *udata, const char *msg) {
   mgos_system_restart();
 }
 
+static bool mos_duk_file_exists(const char *fname) {
+  LOG(LL_DEBUG, (
+    "mos_duk_file_exists: fname:'%s'",
+      fname
+  ));
+
+  struct stat st;
+  if (stat(fname, &st) != 0) return false;
+  return true;
+}
+
+// taken from: https://github.com/cesanta/mjs/blob/c1597477f4062756878ddf0e8194ccaf05cd454c/common/cs_file.c
+static char* mos_duk_read_file(const char *path, size_t *size) {
+  FILE *fp;
+  char *data = NULL;
+  if ((fp = fopen(path, "rb")) == NULL) {
+  } else if (fseek(fp, 0, SEEK_END) != 0) {
+    fclose(fp);
+  } else {
+    *size = ftell(fp);
+    // XXX: maybe we could use duk_alloc to use its GC
+    data = (char *) malloc(*size + 1);
+    if (data != NULL) {
+      fseek(fp, 0, SEEK_SET); /* Some platforms might not have rewind(), Oo */
+      if (fread(data, 1, *size, fp) != *size) {
+        free(data);
+        return NULL;
+      }
+      data[*size] = '\0';
+    }
+    fclose(fp);
+  }
+  return data;
+}
+
 static duk_ret_t mos_duk_resolve_module_handler(duk_context *ctx) {
   const char *module_id;
 	const char *parent_id;
@@ -29,9 +64,26 @@ static duk_ret_t mos_duk_resolve_module_handler(duk_context *ctx) {
 	module_id = duk_require_string(ctx, 0);
 	parent_id = duk_require_string(ctx, 1);
 
-  // TODO: resolve file correctly
+  bool is_simple = mos_duk_file_exists(module_id);
+  if (is_simple) {
+    duk_push_string(ctx, module_id);
+  } else {
+    // Append .js to the end of the file
+    char buf[strlen(module_id) + 4];
+    snprintf(buf, sizeof(buf), "%s.js", module_id);
+    bool is_js = mos_duk_file_exists(buf);
 
-	duk_push_sprintf(ctx, "%s.js", module_id);
+    // We ran out of options.
+    // XXX: Maybe we should try .mjs too?
+    if (!is_js) {
+      (void) duk_type_error(ctx, "cannot find module: %s", module_id);
+      return DUK_RET_ERROR;
+    }
+
+    // XXX: should we compute the hash of the module?
+    duk_push_string(ctx, buf);
+  }
+
 	LOG(LL_DEBUG, (
     "mos_duk_resolve_module_handler: id:'%s', parent-id:'%s', resolve-to:'%s'",
       module_id,
@@ -50,12 +102,20 @@ static duk_ret_t mos_duk_load_module_handler(duk_context *ctx) {
   duk_get_prop_string(ctx, 2, "filename");
   filename = duk_require_string(ctx, -1);
 
-  LOG(LL_DEBUG, ("mos_duk_resolve_module_handler: id:'%s', filename:'%s'", module_id, filename));
+  LOG(LL_DEBUG, ("mos_duk_load_module_handler: id:'%s', filename:'%s'", module_id, filename));
 
-  // TODO: resolve file
-  (void) duk_type_error(ctx, "cannot find module: %s", module_id);
+  size_t size;
+  char *source_code = mos_duk_read_file(filename, &size);
+  if (source_code == NULL) {
+    LOG(LL_ERROR, ("cannot find module: %s", module_id));
+    (void) duk_type_error(ctx, "cannot find module: %s", module_id);
+    return DUK_RET_ERROR;
+  }
 
-
+  LOG(LL_DEBUG, ("File: %s", source_code));
+  const char* dukstr = duk_push_string(ctx, source_code);
+  free(source_code);
+  LOG(LL_DEBUG, ("Duktape STR: %s", dukstr));
   return 1;
 }
 
@@ -89,6 +149,27 @@ static duk_ret_t native_print(duk_context *ctx) {
 	return 0;
 }
 
+static void mos_duk_init_done_handler(int ev, void *ev_data, void *userdata) {
+  LOG(LL_DEBUG, ("Calling main function"));
+  duk_push_string(ctx,
+    "if (typeof Duktape !== 'object') {\n"
+    "    print('not Duktape');\n"
+    "} else if (Duktape.version >= 20403) {\n"
+    "    print('Duktape 2.4.3 or higher');\n"
+    "} else if (Duktape.version >= 10500) {\n"
+    "    print('Duktape 1.5.0 or higher (but lower than 2.4.3)');\n"
+    "} else {\n"
+    "    print('Duktape lower than 1.5.0');\n"
+    "}\n\n\n"
+    "try { require('foo'); } catch (e) { print('problem catched!'); print('Error was: ', e); }"
+  );
+  duk_ret_t rc = duk_module_node_peval_main(ctx, "index.js");
+  if (rc != 0) {
+    LOG(LL_DEBUG, ("about to call mos_duk_log_error"));
+    mos_duk_log_error(ctx);
+  }
+}
+
 bool mgos_duk_init(void) {
   /* Initialize Duktape engine */
   int mem1, mem2;
@@ -107,30 +188,13 @@ bool mgos_duk_init(void) {
   LOG(LL_DEBUG, ("Creating print function"));
   duk_push_c_function(ctx, &native_print, DUK_VARARGS);
   duk_put_global_string(ctx, "print");
-  // duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_SET_WRITABLE | DUK_DEFPROP_SET_CONFIGURABLE);
 
-  LOG(LL_DEBUG, ("Calling main function"));
-  duk_push_string(ctx,
-    "if (typeof Duktape !== 'object') {\n"
-    "    print('not Duktape');\n"
-    "} else if (Duktape.version >= 20403) {\n"
-    "    print('Duktape 2.4.3 or higher');\n"
-    "} else if (Duktape.version >= 10500) {\n"
-    "    print('Duktape 1.5.0 or higher (but lower than 2.4.3)');\n"
-    "} else {\n"
-    "    print('Duktape lower than 1.5.0');\n"
-    "}\n\n\n"
-    "try { require('foo'); } catch (e) { print('problem catched!'); print('Error was: ', e); }"
-  );
-  duk_ret_t rc = duk_module_node_peval_main(ctx, "index.js");
-  if (rc != 0) {
-    mos_duk_log_error(ctx);
-  }
+  mgos_event_add_handler(MGOS_EVENT_INIT_DONE, mos_duk_init_done_handler, NULL);
 
   mem2 = mgos_get_free_heap_size();
 
-  LOG(LL_DEBUG, ("Killing duk..."));
-  duk_destroy_heap(ctx);
+  // LOG(LL_DEBUG, ("Killing duk..."));
+  // duk_destroy_heap(ctx);
 
   LOG(LL_DEBUG,
       ("Duktape memory stat: before init: %d after init: %d (%d kb)", mem1, mem2, (mem1 - mem2) / 1024));
