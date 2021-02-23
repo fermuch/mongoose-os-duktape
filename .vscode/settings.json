@@ -2,6 +2,7 @@
   "files.associations": {
     "mgos_system.h": "c",
     "mos_duk.h": "c",
-    "duktape.h": "c"
+    "duktape.h": "c",
+    "mos_duk_funcs.h": "c"
   }
 }
