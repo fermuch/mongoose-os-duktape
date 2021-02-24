@@ -10,6 +10,9 @@
 #include "mgos_sys_config.h"
 #include "mgos_event.h"
 #include "mgos_debug.h"
+#include "mgos_gpio.h"
+#include "mgos_system.h"
+#include "mgos_time.h"
 
 #include "mos_duk_utils.h"
 
@@ -389,9 +392,111 @@ static duk_ret_t mos_duk_func__event_on(duk_context* ctx) {
   return 1;
 }
 
-void mos_duk_define_functions(duk_context* ctx) {
-  // duk_int_t rc;
+static duk_ret_t mos_duk_func__gpio_set_mode(duk_context* ctx) {
+  int pin = duk_require_int(ctx, 0);
+  int mode = duk_require_int(ctx, 1);
+  
+  bool res = mgos_gpio_set_mode(pin, mode);
+  duk_push_boolean(ctx, res);
+  return 1;
+}
 
+static duk_ret_t mos_duk_func__gpio_write(duk_context* ctx) {
+  int pin = duk_require_int(ctx, 0);
+  bool level = duk_require_boolean(ctx, 1);
+  
+  mgos_gpio_write(pin, level);
+  return 0;
+}
+
+static duk_ret_t mos_duk_func__gpio_read(duk_context* ctx) {
+  int pin = duk_require_int(ctx, 0);
+  
+  bool res = mgos_gpio_read(pin);
+  duk_push_boolean(ctx, res);
+  return 1;
+}
+
+static duk_ret_t mos_duk_func__sys_heap_size(duk_context* ctx) {
+  duk_push_int(ctx, mgos_get_heap_size());
+  return 1;
+}
+
+static duk_ret_t mos_duk_func__sys_free_heap_size(duk_context* ctx) {
+  duk_push_int(ctx, mgos_get_free_heap_size());
+  return 1;
+}
+
+static duk_ret_t mos_duk_func__sys_min_free_heap_size(duk_context* ctx) {
+  duk_push_int(ctx, mgos_get_min_free_heap_size());
+  return 1;
+}
+
+static duk_ret_t mos_duk_func__sys_fs_mem_usage(duk_context* ctx) {
+  duk_push_int(ctx, mgos_get_fs_memory_usage());
+  return 1;
+}
+
+static duk_ret_t mos_duk_func__sys_fs_size(duk_context* ctx) {
+  duk_push_int(ctx, mgos_get_fs_size());
+  return 1;
+}
+
+static duk_ret_t mos_duk_func__sys_fs_free_usage(duk_context* ctx) {
+  duk_push_int(ctx, mgos_get_free_fs_size());
+  return 1;
+}
+
+static duk_ret_t mos_duk_func__sys_fs_gc(duk_context* ctx) {
+  mgos_fs_gc();
+  return 0;
+}
+
+static duk_ret_t mos_duk_func__sys_fs_wdt_feed(duk_context* ctx) {
+  mgos_wdt_feed();
+  return 0;
+}
+
+static duk_ret_t mos_duk_func__sys_wdt_set_timeout(duk_context* ctx) {
+  int timeout = duk_require_int(ctx, 0);
+
+  mgos_wdt_set_timeout(timeout);
+  return 0;
+}
+
+static duk_ret_t mos_duk_func__sys_wdt(duk_context* ctx) {
+  bool enabled = duk_require_boolean(ctx, 0);
+  if (enabled) {
+    mgos_wdt_enable();
+  } else {
+    mgos_wdt_disable();
+  }
+
+  return 0;
+}
+
+static duk_ret_t mos_duk_func__sys_restart(duk_context* ctx) {
+  mgos_system_restart();
+  return 0;
+}
+
+static duk_ret_t mos_duk_func__mos_time_set(duk_context* ctx) {
+  duk_int_t top = duk_get_top(ctx);
+  if (top > 2 || top < 1) {
+    duk_push_error_object(ctx, DUK_ERR_TYPE_ERROR, "At least one parameter is needed. Second parameter is timezone.");
+    return 1;
+  }
+
+  double time = duk_require_number(ctx, 0);
+  if (top == 2) {
+    duk_push_error_object(ctx, DUK_ERR_TYPE_ERROR, "Timezone parsing is still #TODO#. Sorry.");
+    return 1;
+  }
+
+  mgos_settimeofday(time, NULL);
+}
+
+void mos_duk_define_functions(duk_context* ctx) {
   // print(...)
   duk_push_c_function(ctx, &mos_duk_func_native_print, DUK_VARARGS);
   duk_put_global_string(ctx, "print");
@@ -464,19 +569,45 @@ void mos_duk_define_functions(duk_context* ctx) {
   ADD_FUNCTION_W_FLAG("onGroup", mos_duk_func__event_on, 2 /* argc */, 1 /* flag */);
   // TODO: how can we remove an event?
   duk_put_prop_string(ctx, -2, "Event");
-  // MOS I2C
-  // MOS JSON
-  // MOS Logging
-  // MOS Membuf
-  // MOS Net Events
-  // MOS Onewire
-  // MOS PWM
-  // MOS SPI
-  // MOS String
+  // MOS GPIO
+  duk_push_object(ctx); // MOS.GPIO
+  ADD_INT("MGOS_GPIO_MODE_INPUT", MGOS_GPIO_MODE_INPUT);
+  ADD_INT("MGOS_GPIO_MODE_OUTPUT", MGOS_GPIO_MODE_OUTPUT);
+  ADD_INT("MGOS_GPIO_PULL_NONE", MGOS_GPIO_PULL_NONE);
+  ADD_INT("MGOS_GPIO_PULL_UP", MGOS_GPIO_PULL_UP);
+  ADD_INT("MGOS_GPIO_PULL_DOWN", MGOS_GPIO_PULL_DOWN);
+  ADD_FUNCTION("register", mos_duk_func__gpio_set_mode, 2);
+  ADD_FUNCTION("write", mos_duk_func__gpio_write, 2);
+  ADD_FUNCTION("read", mos_duk_func__gpio_read, 1);
+  // TODO: Interrupts and mgos_gpio_set_button_handler
+  //       Since they are ran inside an interrupt handler,
+  //       running js is not safe. We should have a flag
+  //       to evaluate JS after an interrupt occurs.
+  duk_put_prop_string(ctx, -2, "GPIO");
+  // TODO: write I2C handlers
+  // TODO write NET handlers
+  // TODO write OneWire handlers
+  // TODO write PWM handlers
+  // TODO write SPI handlers
   // MOS System
+  duk_push_object(ctx); // MOS.System
+  ADD_FUNCTION("heapSize", mos_duk_func__sys_heap_size, 0);
+  ADD_FUNCTION("freeHeapSize", mos_duk_func__sys_free_heap_size, 0);
+  ADD_FUNCTION("minFreeHeapSize", mos_duk_func__sys_min_free_heap_size, 0);
+  ADD_FUNCTION("fsMemUsage", mos_duk_func__sys_fs_mem_usage, 0);
+  ADD_FUNCTION("fsSize", mos_duk_func__sys_fs_size, 0);
+  ADD_FUNCTION("freeFsSize", mos_duk_func__sys_fs_free_usage, 0);
+  ADD_FUNCTION("fsGC", mos_duk_func__sys_fs_gc, 0);
+  ADD_FUNCTION("wdtFeed", mos_duk_func__sys_fs_wdt_feed, 0);
+  ADD_FUNCTION("wdtSetTimeout", mos_duk_func__sys_wdt_set_timeout, 1);
+  ADD_FUNCTION("wdt", mos_duk_func__sys_wdt, 1);
+  ADD_FUNCTION("restart", mos_duk_func__sys_restart, 0);
+  // TODO: locks, enable/disable interrupts and sleep
+  duk_put_prop_string(ctx, -2, "System");
   // MOS Time
   duk_push_object(ctx); // MOS.Time
   ADD_FUNCTION("uptime", mos_duk_func__mos_timers_uptime, 1);
+  ADD_FUNCTION("set", mos_duk_func__mos_time_set, DUK_VARARGS);
   duk_put_prop_string(ctx, -2, "Time");
   // MOS Timers
   duk_push_object(ctx); // MOS.Timers
