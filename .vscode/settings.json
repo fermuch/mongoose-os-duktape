@@ -5,6 +5,8 @@
     "duktape.h": "c",
     "mos_duk_funcs.h": "c",
     "typeindex": "c",
-    "typeinfo": "c"
+    "typeinfo": "c",
+    "mgos_bitbang.h": "c",
+    "mgos_config.h": "c"
   }
 }

@@ -5,6 +5,8 @@
 #include "mgos_timers.h"
 #include "mgos_time.h"
 #include "mgos_adc.h"
+#include "mgos_bitbang.h"
+#include "mgos_config.h"
 
 #include "mos_duk_utils.h"
 
@@ -178,8 +180,62 @@ static duk_ret_t mos_duk_func__adc_enable(duk_context* ctx) {
 static duk_ret_t mos_duk_func__adc_read(duk_context* ctx) {
   int pin;
   pin = duk_require_int(ctx, 0);
-  int value = mgos_adc_read(pin);
+  int value = mgos_adc_read_voltage(pin); // returns mV
   duk_push_uint(ctx, value);
+  return 1;
+}
+
+// MGOS.BitBang.write()
+#if MGOS_ENABLE_BITBANG
+static duk_ret_t mos_duk_func__bitbang_write(duk_context* ctx) {
+  duk_uint_t gpio = duk_require_uint(ctx, 0);
+  duk_uint_t delay_unit = duk_require_uint(ctx, 1);
+  duk_uint_t t0h = duk_require_uint(ctx, 2);
+  duk_uint_t t0l = duk_require_uint(ctx, 3);
+  duk_uint_t t1h = duk_require_uint(ctx, 4);
+  duk_uint_t t1l = duk_require_uint(ctx, 5);
+  duk_size_t sz;
+  const uint8_t* data = duk_require_buffer_data(ctx, 6, &sz);
+
+  LOG(LL_DEBUG, ("mgos_bitbang_write_bits: buf=%p, size=%lu\n", data, (unsigned long) sz));
+  mgos_bitbang_write_bits(gpio, delay_unit, t0h, t0l, t1h, t1l, data, sz);
+  return 0;
+}
+#endif
+
+static duk_ret_t mos_duk_func__config_get(duk_context* ctx) {
+  const char* path = duk_require_string(ctx, 0);
+
+  const void *entry_ptr = mgos_conf_find_schema_entry(path, mgos_config_schema());
+  if (entry_ptr == NULL) {
+    return 0; // return undefined
+  }
+
+  enum mgos_conf_type conf_type = mgos_conf_value_type((void *)entry_ptr);
+  LOG(LL_VERBOSE_DEBUG, ("mos_duk_func__config_get: Found '%s' with type: %d", path, conf_type));
+  switch (conf_type) {
+    case CONF_TYPE_INT:
+      duk_push_int(ctx, mgos_conf_value_int(&mgos_sys_config, entry_ptr));
+      break;
+    case CONF_TYPE_BOOL:
+      duk_push_boolean(ctx, mgos_conf_value_int(&mgos_sys_config, entry_ptr) != 0);
+      break;
+    case CONF_TYPE_DOUBLE:
+      duk_push_number(ctx, mgos_conf_value_double(&mgos_sys_config, entry_ptr));
+      break;
+    case CONF_TYPE_STRING:
+      duk_push_string(ctx, mgos_conf_value_string_nonnull(&mgos_sys_config, entry_ptr));
+      break;
+    case CONF_TYPE_OBJECT:
+      // objects are unsupported for now
+      LOG(LL_ERROR, ("Path '%s' is an object. Please be more specific.", path));
+      duk_push_error_object(ctx, DUK_ERR_REFERENCE_ERROR, "Path '%s' is an object. Please be more specific.", path);
+      return 1;
+    case CONF_TYPE_UNSIGNED_INT:
+      duk_push_uint(ctx, mgos_conf_value_int(&mgos_sys_config, entry_ptr));
+      break;
+  }
+  
   return 1;
 }
 
@@ -211,9 +267,19 @@ void mos_duk_define_functions(duk_context* ctx) {
   ADD_FUNCTION("enable", mos_duk_func__adc_enable, 1);
   ADD_FUNCTION("read", mos_duk_func__adc_read, 1);
   duk_put_prop_string(ctx, -2, "ADC");
-  // MOS App
   // MOS BitBang
+#if MGOS_ENABLE_BITBANG
+  duk_push_object(ctx); // MOS.BitBang
+  ADD_INT("MGOS_DELAY_MSEC", MGOS_DELAY_MSEC);
+  ADD_INT("MGOS_DELAY_USEC", MGOS_DELAY_USEC);
+  ADD_INT("MGOS_DELAY_100NSEC", MGOS_DELAY_100NSEC);
+  ADD_FUNCTION("write", mos_duk_func__bitbang_write, 7);
+  duk_put_prop_string(ctx, -2, "BitBang");
+#endif
   // MOS Config
+  duk_push_object(ctx); // MOS.Config
+  ADD_FUNCTION("get", mos_duk_func__config_get, 1);
+  duk_put_prop_string(ctx, -2, "Config");
   // MOS Debug
   // MOS Event
   // MOS I2C
