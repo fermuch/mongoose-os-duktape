@@ -7,6 +7,7 @@
     "typeindex": "c",
     "typeinfo": "c",
     "mgos_bitbang.h": "c",
-    "mgos_config.h": "c"
+    "mgos_config.h": "c",
+    "mgos_debug.h": "c"
   }
 }

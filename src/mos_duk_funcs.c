@@ -10,6 +10,10 @@
 #include "mgos_sys_config.h"
 #include "mgos_event.h"
 
+// hidden functions
+void *mgos_debug_event_get_ptr(void *);
+int mgos_debug_event_get_len(void *);
+
 #include "mos_duk_utils.h"
 
 // taken from https://github.com/nkolban/duktape-esp32/blob/28b4fb194665039ec7a907d346e9c2cd44e387df/main/include/duktape_utils.h
@@ -296,9 +300,11 @@ static duk_ret_t mos_duk_func__event_trigger(duk_context* ctx) {
     return 1;
   }
   int event_number = duk_require_int(ctx, 0);
-  bool has_payload = duk_is_buffer_data(ctx, 1);
   duk_size_t sz;
-  uint8_t * data = has_payload ? duk_get_buffer_data(ctx, 1, &sz) : NULL;
+  uint8_t * data = NULL;
+  if (top == 2) {
+    uint8_t* data = duk_require_buffer_data(ctx, 1, &sz);
+  }
   // the callbacks are called immediately, so we shouldn't need to make a copy
   // of the data. If this changes in the future, we'll need to copy and free
   // "data" since duktape would GC it.
@@ -337,13 +343,17 @@ static void mos_duk_event_cb_handler(int ev, void *ev_data, void *userdata) {
   // these are the func parameters
   //    first parameter is event id
   duk_push_int(ctx, ev);
-  //    second parameter is buffer (evdata)
-  // XXX: how can we even send ev_data if we don't know its size?
-  // duk_push_buffer_object(ctx, ev_data, sizeof(ev_data), )
+  //    second parameter is buffer (evdata) or null
+  if (ev_data == NULL) {
+    duk_push_null(ctx);
+  } else {
+    void *ptr = mgos_debug_event_get_ptr(ev_data);
+    int ptr_len = mgos_debug_event_get_len(ev_data);
+    duk_push_buffer_object(ctx, (duk_idx_t) ptr, 0, ptr_len, DUK_BUFOBJ_UINT8ARRAY);
+  }
 
   // call the callback
-  LOG(LL_VERBOSE_DEBUG, ("calling %s(%d)", id, ev));
-  duk_int_t rc = duk_pcall(ctx, 1);
+  duk_int_t rc = duk_pcall(ctx, 2);
   if (rc != 0) {
     mos_duk_log_error(ctx);
   }
