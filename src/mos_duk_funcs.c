@@ -7,6 +7,8 @@
 #include "mgos_adc.h"
 #include "mgos_bitbang.h"
 #include "mgos_config.h"
+#include "mgos_sys_config.h"
+#include "mgos_event.h"
 
 #include "mos_duk_utils.h"
 
@@ -97,7 +99,7 @@ static duk_ret_t mos_duk_func_log(duk_context* ctx) {
   return 0;
 }
 
-typedef struct MGOS_DUK_TIMER_CALLBACK_PAYLOAD {
+typedef struct {
   duk_context* ctx;
   char id[10]; // tcbXXXXXX
   mgos_timer_id native_timer_id;
@@ -106,6 +108,7 @@ typedef struct MGOS_DUK_TIMER_CALLBACK_PAYLOAD {
 static void mos_duk_timer_cb_handler(void* arg) {
   if (arg == NULL) {
     LOG(LL_ERROR, ("Invalid timer callback data."));
+    return;
   }
   mgosTimerCallback timerCallbackData = *((mgosTimerCallback *) arg);
   duk_context* ctx = timerCallbackData.ctx;
@@ -126,7 +129,6 @@ static void mos_duk_timer_cb_handler(void* arg) {
     return;
   }
 
-  /* Protected call, log callback errors. */
   duk_int_t rc = duk_pcall(ctx, 0);
   if (rc != 0) {
     mos_duk_log_error(ctx);
@@ -239,6 +241,128 @@ static duk_ret_t mos_duk_func__config_get(duk_context* ctx) {
   return 1;
 }
 
+static duk_ret_t mos_duk_func__config_set(duk_context* ctx) {
+  // check if it is an object
+  duk_require_object(ctx, 0);
+  // now convert it to a JSON string
+  duk_json_encode(ctx, 0);
+  // and get it as a string
+  const char *data = duk_require_string(ctx, 0);
+  duk_bool_t commit = duk_require_boolean(ctx, 1);
+  bool res = mgos_config_apply(data, commit);
+  duk_push_boolean(ctx, res);
+  return 1;
+}
+
+static duk_ret_t mos_duk_func__config_reset(duk_context* ctx) {
+  int level = duk_require_int(ctx, 0);
+  mgos_config_reset(level);
+  return 0;
+}
+
+static duk_ret_t mos_duk_func__event_base_number(duk_context* ctx) {
+  const char* name = duk_require_string(ctx, 0);
+  size_t sz = strlen(name);
+  if (sz != 3) {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "baseNumber(id) only accepts 3 characters. Total given: %d", sz);
+    return 1;
+  }
+  char a = name[0];
+  char b = name[1];
+  char c = name[2];
+  uint16_t ev_number = ((a) << 24 | (b) << 16 | (c) << 8);
+  duk_push_int(ctx, ev_number);
+  return 1;
+}
+
+static duk_ret_t mos_duk_func__event_register(duk_context* ctx) {
+  int event_number = duk_require_int(ctx, 0);
+  const char* name = duk_require_string(ctx, 1);
+  
+  bool res = mgos_event_register_base(event_number, name);
+  duk_push_boolean(ctx, res);
+  return 1;
+}
+
+static duk_ret_t mos_duk_func__event_trigger(duk_context* ctx) {
+  duk_int_t top = duk_get_top(ctx);
+  if (top > 2 || top < 1) {
+    duk_push_error_object(ctx, DUK_ERR_TYPE_ERROR, "At least one parameter is needed. Second parameter is callback data (Uint8Array).");
+    return 1;
+  }
+  int event_number = duk_require_int(ctx, 0);
+  bool has_payload = duk_is_buffer_data(ctx, 1);
+  duk_size_t sz;
+  uint8_t * data = has_payload ? duk_get_buffer_data(ctx, 1, &sz) : NULL;
+  // the callbacks are called immediately, so we shouldn't need to make a copy
+  // of the data. If this changes in the future, we'll need to copy and free
+  // "data" since duktape would GC it.
+  int ret = mgos_event_trigger(event_number, data);
+  duk_push_int(ctx, ret);
+  return 1;
+}
+
+typedef struct {
+  duk_context* ctx;
+  char id[10]; // ecbXXXXXX
+} mgosEventCallback;
+
+static void mos_duk_event_cb_handler(int ev, void *ev_data, void *userdata) {
+  if (userdata == NULL) {
+    LOG(LL_ERROR, ("Invalid event callback data."));
+    return;
+  }
+  mgosEventCallback eventCallbackData = *((mgosEventCallback *) userdata);
+  duk_context* ctx = eventCallbackData.ctx;
+  char* id = eventCallbackData.id;
+
+  // obtain callback function
+  duk_get_global_string(ctx, id);
+
+  // check if it wasn't deleted
+  if (!duk_is_function(ctx, -1)) {
+    LOG(LL_ERROR, ("event callback was deleted. This shouldn't happen"));
+    if (userdata != NULL) {
+      // at this point let's free the user data. Why not, if we can't use it.
+      free(userdata);
+    }
+    return;
+  }
+
+  duk_int_t rc = duk_pcall(ctx, 0);
+  if (rc != 0) {
+    mos_duk_log_error(ctx);
+  }
+  duk_pop(ctx);
+}
+
+static duk_ret_t mos_duk_func__event_on(duk_context* ctx) {
+  // fail early if invalid event is given
+  int event_number = duk_require_int(ctx, 0);
+  
+  char id_buf[7] = {0};
+  char callback_id[10] = "ecb";
+  gen_random_id(id_buf, 6);
+  strcat(callback_id, id_buf);
+  callback_id[9] = '\0';
+  
+  duk_require_function(ctx, 1);
+  duk_dup(ctx, 1); // store js callback
+  duk_put_global_string(ctx, callback_id); // assign callback to a global var
+  LOG(LL_DEBUG, ("Registering event id %d with callback as: %s", event_number, callback_id));
+
+  mgosEventCallback* eventCallbackData = malloc(sizeof(mgosEventCallback));
+  if (eventCallbackData == NULL) {
+    return DUK_RET_RANGE_ERROR;
+  }
+
+  eventCallbackData->ctx = ctx;
+  strcpy(eventCallbackData->id, callback_id);
+  bool ret = mgos_event_add_handler(event_number, mos_duk_event_cb_handler, (void *) eventCallbackData);
+  duk_push_boolean(ctx, ret);
+  return 1;
+}
+
 void mos_duk_define_functions(duk_context* ctx) {
   // duk_int_t rc;
 
@@ -279,9 +403,35 @@ void mos_duk_define_functions(duk_context* ctx) {
   // MOS Config
   duk_push_object(ctx); // MOS.Config
   ADD_FUNCTION("get", mos_duk_func__config_get, 1);
+  ADD_FUNCTION("set", mos_duk_func__config_set, 2);
+  ADD_INT("MGOS_CONFIG_LEVEL_DEFAULTS", MGOS_CONFIG_LEVEL_DEFAULTS);
+  ADD_INT("MGOS_CONFIG_LEVEL_VENDOR_1", MGOS_CONFIG_LEVEL_VENDOR_1);
+  ADD_INT("MGOS_CONFIG_LEVEL_VENDOR_2", MGOS_CONFIG_LEVEL_VENDOR_2);
+  ADD_INT("MGOS_CONFIG_LEVEL_VENDOR_3", MGOS_CONFIG_LEVEL_VENDOR_3);
+  ADD_INT("MGOS_CONFIG_LEVEL_VENDOR_4", MGOS_CONFIG_LEVEL_VENDOR_4);
+  ADD_INT("MGOS_CONFIG_LEVEL_VENDOR_5", MGOS_CONFIG_LEVEL_VENDOR_5);
+  ADD_INT("MGOS_CONFIG_LEVEL_VENDOR_6", MGOS_CONFIG_LEVEL_VENDOR_6);
+  ADD_INT("MGOS_CONFIG_LEVEL_VENDOR_7", MGOS_CONFIG_LEVEL_VENDOR_7);
+  ADD_INT("MGOS_CONFIG_LEVEL_VENDOR_8", MGOS_CONFIG_LEVEL_VENDOR_8);
+  ADD_INT("MGOS_CONFIG_LEVEL_USER", MGOS_CONFIG_LEVEL_USER);
+  ADD_FUNCTION("reset", mos_duk_func__config_reset, 1);
   duk_put_prop_string(ctx, -2, "Config");
-  // MOS Debug
   // MOS Event
+  duk_push_object(ctx); // MOS.Event
+  ADD_INT("MGOS_EVENT_SYS", MGOS_EVENT_SYS);
+  ADD_INT("MGOS_EVENT_INIT_DONE", MGOS_EVENT_INIT_DONE);
+  ADD_INT("MGOS_EVENT_LOG", MGOS_EVENT_LOG);
+  ADD_INT("MGOS_EVENT_REBOOT", MGOS_EVENT_REBOOT);
+  ADD_INT("MGOS_EVENT_TIME_CHANGED", MGOS_EVENT_TIME_CHANGED);
+  ADD_INT("MGOS_EVENT_CLOUD_CONNECTED", MGOS_EVENT_CLOUD_CONNECTED);
+  ADD_INT("MGOS_EVENT_CLOUD_DISCONNECTED", MGOS_EVENT_CLOUD_DISCONNECTED);
+  ADD_INT("MGOS_EVENT_CLOUD_CONNECTING", MGOS_EVENT_CLOUD_CONNECTING);
+  ADD_INT("MGOS_EVENT_REBOOT_AFTER", MGOS_EVENT_REBOOT_AFTER);
+  ADD_FUNCTION("register", mos_duk_func__event_register, 2);
+  ADD_FUNCTION("baseNumber", mos_duk_func__event_base_number, 1);
+  ADD_FUNCTION("trigger", mos_duk_func__event_trigger, DUK_VARARGS);
+  ADD_FUNCTION("on", mos_duk_func__event_on, 2);
+  duk_put_prop_string(ctx, -2, "Event");
   // MOS I2C
   // MOS JSON
   // MOS Logging
