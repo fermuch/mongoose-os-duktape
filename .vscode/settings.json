@@ -8,6 +8,13 @@
     "typeinfo": "c",
     "mgos_bitbang.h": "c",
     "mgos_config.h": "c",
-    "mgos_debug.h": "c"
+    "mgos_debug.h": "c",
+    "array": "c",
+    "hash_map": "c",
+    "hash_set": "c",
+    "bitset": "c",
+    "string_view": "c",
+    "initializer_list": "c",
+    "utility": "c"
   }
 }

@@ -9,10 +9,7 @@
 #include "mgos_config.h"
 #include "mgos_sys_config.h"
 #include "mgos_event.h"
-
-// hidden functions
-void *mgos_debug_event_get_ptr(void *);
-int mgos_debug_event_get_len(void *);
+#include "mgos_debug.h"
 
 #include "mos_duk_utils.h"
 
@@ -301,13 +298,10 @@ static duk_ret_t mos_duk_func__event_trigger(duk_context* ctx) {
   }
   int event_number = duk_require_int(ctx, 0);
   duk_size_t sz;
-  uint8_t * data = NULL;
+  void *data = NULL;
   if (top == 2) {
-    uint8_t* data = duk_require_buffer_data(ctx, 1, &sz);
+    data = duk_require_buffer_data(ctx, 1, &sz);
   }
-  // the callbacks are called immediately, so we shouldn't need to make a copy
-  // of the data. If this changes in the future, we'll need to copy and free
-  // "data" since duktape would GC it.
   int ret = mgos_event_trigger(event_number, data);
   duk_push_int(ctx, ret);
   return 1;
@@ -347,9 +341,9 @@ static void mos_duk_event_cb_handler(int ev, void *ev_data, void *userdata) {
   if (ev_data == NULL) {
     duk_push_null(ctx);
   } else {
-    void *ptr = mgos_debug_event_get_ptr(ev_data);
-    int ptr_len = mgos_debug_event_get_len(ev_data);
-    duk_push_buffer_object(ctx, (duk_idx_t) ptr, 0, ptr_len, DUK_BUFOBJ_UINT8ARRAY);
+    struct mgos_debug_hook_arg *ptr = (struct mgos_debug_hook_arg *) ev_data;
+    duk_uint8_t *duk_ptr = duk_push_fixed_buffer(ctx, ptr->len + 1);
+    memcpy(duk_ptr, ev_data, ptr->len);
   }
 
   // call the callback
@@ -425,14 +419,17 @@ void mos_duk_define_functions(duk_context* ctx) {
   ADD_FUNCTION("read", mos_duk_func__adc_read, 1);
   duk_put_prop_string(ctx, -2, "ADC");
   // MOS BitBang
-#if MGOS_ENABLE_BITBANG
   duk_push_object(ctx); // MOS.BitBang
+#if MGOS_ENABLE_BITBANG
+  ADD_BOOLEAN("enabled", true);
   ADD_INT("MGOS_DELAY_MSEC", MGOS_DELAY_MSEC);
   ADD_INT("MGOS_DELAY_USEC", MGOS_DELAY_USEC);
   ADD_INT("MGOS_DELAY_100NSEC", MGOS_DELAY_100NSEC);
   ADD_FUNCTION("write", mos_duk_func__bitbang_write, 7);
-  duk_put_prop_string(ctx, -2, "BitBang");
+#else
+  ADD_BOOLEAN("enabled", false);
 #endif
+  duk_put_prop_string(ctx, -2, "BitBang");
   // MOS Config
   duk_push_object(ctx); // MOS.Config
   ADD_FUNCTION("get", mos_duk_func__config_get, 1);
