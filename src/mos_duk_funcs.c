@@ -396,6 +396,7 @@ void mos_duk_define_functions(duk_context* ctx) {
   duk_push_global_object(ctx);
   mos_duk_reg_vararg_func(ctx, mos_duk_func_log, "assert", LOG_ASSERT);
 	mos_duk_reg_vararg_func(ctx, mos_duk_func_log, "log", LOG_INFO);
+  mos_duk_reg_vararg_func(ctx, mos_duk_func_log, "dir", LOG_INFO);
   mos_duk_reg_vararg_func(ctx, mos_duk_func_log, "info", LOG_INFO);
 	mos_duk_reg_vararg_func(ctx, mos_duk_func_log, "debug", LOG_DEBUG);
   mos_duk_reg_vararg_func(ctx, mos_duk_func_log, "error", LOG_ERROR);
