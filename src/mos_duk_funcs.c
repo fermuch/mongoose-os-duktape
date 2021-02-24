@@ -17,6 +17,11 @@
 		duk_push_c_function(ctx, FUNCTION_NAME, PARAM_COUNT); \
 		duk_put_prop_string(ctx, -2, FUNCTION_NAME_STRING)
 
+#define ADD_FUNCTION_W_FLAG(FUNCTION_NAME_STRING, FUNCTION_NAME, PARAM_COUNT, FLAG) \
+    duk_push_c_function(ctx, FUNCTION_NAME, PARAM_COUNT); \
+    duk_set_magic(ctx, -1, (duk_int_t) FLAG); \
+    duk_put_prop_string(ctx, -2, FUNCTION_NAME_STRING)
+
 #define ADD_GLOBAL_FUNCTION(FUNCTION_NAME_STRING, FUNCTION_NAME, PARAM_COUNT) \
 		duk_push_c_function(ctx, FUNCTION_NAME, PARAM_COUNT); \
 		duk_put_global_string(ctx, FUNCTION_NAME_STRING)
@@ -329,7 +334,16 @@ static void mos_duk_event_cb_handler(int ev, void *ev_data, void *userdata) {
     return;
   }
 
-  duk_int_t rc = duk_pcall(ctx, 0);
+  // these are the func parameters
+  //    first parameter is event id
+  duk_push_int(ctx, ev);
+  //    second parameter is buffer (evdata)
+  // XXX: how can we even send ev_data if we don't know its size?
+  // duk_push_buffer_object(ctx, ev_data, sizeof(ev_data), )
+
+  // call the callback
+  LOG(LL_VERBOSE_DEBUG, ("calling %s(%d)", id, ev));
+  duk_int_t rc = duk_pcall(ctx, 1);
   if (rc != 0) {
     mos_duk_log_error(ctx);
   }
@@ -337,6 +351,9 @@ static void mos_duk_event_cb_handler(int ev, void *ev_data, void *userdata) {
 }
 
 static duk_ret_t mos_duk_func__event_on(duk_context* ctx) {
+  // 0 = single event
+  // 1 = event group
+  duk_uint_t flag = (duk_uint_t) duk_get_current_magic(ctx);
   // fail early if invalid event is given
   int event_number = duk_require_int(ctx, 0);
   
@@ -358,7 +375,12 @@ static duk_ret_t mos_duk_func__event_on(duk_context* ctx) {
 
   eventCallbackData->ctx = ctx;
   strcpy(eventCallbackData->id, callback_id);
-  bool ret = mgos_event_add_handler(event_number, mos_duk_event_cb_handler, (void *) eventCallbackData);
+  bool ret;
+  if (flag == 1) {
+    ret = mgos_event_add_group_handler(event_number, mos_duk_event_cb_handler, (void *) eventCallbackData);
+  } else {
+    ret = mgos_event_add_handler(event_number, mos_duk_event_cb_handler, (void *) eventCallbackData);
+  }
   duk_push_boolean(ctx, ret);
   return 1;
 }
@@ -430,7 +452,9 @@ void mos_duk_define_functions(duk_context* ctx) {
   ADD_FUNCTION("register", mos_duk_func__event_register, 2);
   ADD_FUNCTION("baseNumber", mos_duk_func__event_base_number, 1);
   ADD_FUNCTION("trigger", mos_duk_func__event_trigger, DUK_VARARGS);
-  ADD_FUNCTION("on", mos_duk_func__event_on, 2);
+  ADD_FUNCTION_W_FLAG("on", mos_duk_func__event_on, 2 /* argc */, 0 /* flag */);
+  ADD_FUNCTION_W_FLAG("onGroup", mos_duk_func__event_on, 2 /* argc */, 1 /* flag */);
+  // TODO: how can we remove an event?
   duk_put_prop_string(ctx, -2, "Event");
   // MOS I2C
   // MOS JSON
