@@ -16,6 +16,9 @@
 
 #include "mos_duk_utils.h"
 
+// HACK: for some reason this function is unexported.
+float mgos_conf_value_float(const void *cfg, const struct mgos_conf_entry *e);
+
 // taken from https://github.com/nkolban/duktape-esp32/blob/28b4fb194665039ec7a907d346e9c2cd44e387df/main/include/duktape_utils.h
 #define ADD_FUNCTION(FUNCTION_NAME_STRING, FUNCTION_NAME, PARAM_COUNT) \
 		duk_push_c_function(ctx, FUNCTION_NAME, PARAM_COUNT); \
@@ -244,6 +247,9 @@ static duk_ret_t mos_duk_func__config_get(duk_context* ctx) {
       return 1;
     case CONF_TYPE_UNSIGNED_INT:
       duk_push_uint(ctx, mgos_conf_value_int(&mgos_sys_config, entry_ptr));
+      break;
+    case CONF_TYPE_FLOAT:
+      duk_push_number(ctx, mgos_conf_value_float(&mgos_sys_config, entry_ptr));
       break;
   }
   
