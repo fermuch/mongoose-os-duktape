@@ -432,10 +432,11 @@ static duk_ret_t mos_duk_func__sys_min_free_heap_size(duk_context* ctx) {
   return 1;
 }
 
-static duk_ret_t mos_duk_func__sys_fs_mem_usage(duk_context* ctx) {
-  duk_push_int(ctx, mgos_get_fs_memory_usage());
-  return 1;
-}
+// NOTE: mgos_get_fs_memory_usage is undefined on esp32
+// static duk_ret_t mos_duk_func__sys_fs_mem_usage(duk_context* ctx) {
+//   duk_push_int(ctx, mgos_get_fs_memory_usage());
+//   return 1;
+// }
 
 static duk_ret_t mos_duk_func__sys_fs_size(duk_context* ctx) {
   duk_push_int(ctx, mgos_get_fs_size());
@@ -494,6 +495,7 @@ static duk_ret_t mos_duk_func__mos_time_set(duk_context* ctx) {
   }
 
   mgos_settimeofday(time, NULL);
+  return 0;
 }
 
 void mos_duk_define_functions(duk_context* ctx) {
@@ -594,7 +596,7 @@ void mos_duk_define_functions(duk_context* ctx) {
   ADD_FUNCTION("heapSize", mos_duk_func__sys_heap_size, 0);
   ADD_FUNCTION("freeHeapSize", mos_duk_func__sys_free_heap_size, 0);
   ADD_FUNCTION("minFreeHeapSize", mos_duk_func__sys_min_free_heap_size, 0);
-  ADD_FUNCTION("fsMemUsage", mos_duk_func__sys_fs_mem_usage, 0);
+  // ADD_FUNCTION("fsMemUsage", mos_duk_func__sys_fs_mem_usage, 0); // not available on esp32
   ADD_FUNCTION("fsSize", mos_duk_func__sys_fs_size, 0);
   ADD_FUNCTION("freeFsSize", mos_duk_func__sys_fs_free_usage, 0);
   ADD_FUNCTION("fsGC", mos_duk_func__sys_fs_gc, 0);

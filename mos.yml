@@ -24,7 +24,6 @@ cdefs:
   # Duktape is hungry for stack when eval'ing
   MGOS_TASK_STACK_SIZE_BYTES: 16384
 
-# Temporary, while root manifest change propagates (2018/03/29).
 libs:
   - origin: https://github.com/mongoose-os-libs/core
   - origin: https://github.com/mongoose-os-libs/adc
