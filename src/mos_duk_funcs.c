@@ -651,12 +651,12 @@ void mos_duk_define_functions(duk_context* ctx) {
   duk_put_prop_string(ctx, -2, "System");
   // MOS Time
   duk_push_object(ctx); // MOS.Time
-  ADD_FUNCTION("uptime", mos_duk_func__mos_timers_uptime, 1);
+  ADD_FUNCTION("uptime", mos_duk_func__mos_timers_uptime, 0);
   ADD_FUNCTION("set", mos_duk_func__mos_time_set, DUK_VARARGS);
   duk_put_prop_string(ctx, -2, "Time");
   // MOS Timers
   duk_push_object(ctx); // MOS.Timers
-  ADD_FUNCTION("uptime", mos_duk_func__mos_timers_uptime, 1);
+  ADD_FUNCTION("uptime", mos_duk_func__mos_timers_uptime, 0);
   duk_put_prop_string(ctx, -2, "Timers");
   // MOS UART
   // MOS Utils
