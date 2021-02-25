@@ -115,6 +115,7 @@ typedef struct {
   duk_context* ctx;
   char id[10]; // tcbXXXXXX
   mgos_timer_id native_timer_id;
+  bool delete_after; // delete after first execution
 } mgosTimerCallback;
 
 static void mos_duk_timer_cb_handler(void* arg) {
@@ -125,6 +126,7 @@ static void mos_duk_timer_cb_handler(void* arg) {
   mgosTimerCallback timerCallbackData = *((mgosTimerCallback *) arg);
   duk_context* ctx = timerCallbackData.ctx;
   char* id = timerCallbackData.id;
+  bool delete_after = timerCallbackData.delete_after;
 
   // obtain callback function
   duk_get_global_string(ctx, id);
@@ -146,6 +148,11 @@ static void mos_duk_timer_cb_handler(void* arg) {
     mos_duk_log_error(ctx);
   }
   duk_pop(ctx);
+
+  if (delete_after) {
+    mgos_clear_timer(timerCallbackData.native_timer_id);
+    free(arg);
+  }
 }
 
 static duk_ret_t mos_duk_func__set_interval(duk_context* ctx) {
@@ -168,8 +175,37 @@ static duk_ret_t mos_duk_func__set_interval(duk_context* ctx) {
   }
 
   timerCallbackData->ctx = ctx;
+  timerCallbackData->delete_after = false;
   strcpy(timerCallbackData->id, callback_id);
   mgos_timer_id id = mgos_set_timer(interval, MGOS_TIMER_REPEAT, mos_duk_timer_cb_handler, (void *)timerCallbackData);
+  timerCallbackData->native_timer_id = id;
+
+  return 0;
+}
+
+static duk_ret_t mos_duk_func__set_timeout(duk_context* ctx) {
+  char id_buf[7] = {0};
+  char callback_id[10] = "tcb";
+  gen_random_id(id_buf, 6);
+  strcat(callback_id, id_buf);
+  callback_id[9] = '\0';
+  
+  long interval = (long) duk_require_uint(ctx, 1);
+  duk_require_function(ctx, 0);
+  duk_dup(ctx, 0); // store js callback
+  // assign callback to a global var
+  duk_put_global_string(ctx, callback_id);
+  LOG(LL_DEBUG, ("Registering timer after %ld with callback: %s()", interval, callback_id));
+
+  mgosTimerCallback* timerCallbackData = malloc(sizeof(mgosTimerCallback));
+  if (timerCallbackData == NULL) {
+    return DUK_RET_RANGE_ERROR;
+  }
+
+  timerCallbackData->ctx = ctx;
+  strcpy(timerCallbackData->id, callback_id);
+  timerCallbackData->delete_after = true;
+  mgos_timer_id id = mgos_set_timer(interval, 0, mos_duk_timer_cb_handler, (void *)timerCallbackData);
   timerCallbackData->native_timer_id = id;
 
   return 0;
@@ -522,6 +558,7 @@ void mos_duk_define_functions(duk_context* ctx) {
 
   // global utils
   ADD_GLOBAL_FUNCTION("setInterval", mos_duk_func__set_interval, 2);
+  ADD_GLOBAL_FUNCTION("setTimeout", mos_duk_func__set_timeout, 2);
   // TODO: setTimeout
 
   // MOS
